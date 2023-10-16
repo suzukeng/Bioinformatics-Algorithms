@@ -11,12 +11,27 @@ class BigInt {
   uint32_t BlockSize;
   std::vector<T> BlockArray;
   const T max = std::numeric_limits<T>::max();
+  void delTop(BigInt<T>& cp) {
+    uint32_t topbit = (bitSize - (len % bitSize)) % bitSize;
+    for (uint32_t i = 0; i < topbit; i++) {
+      if ((cp.BlockArray.back() & (1ull << (bitSize - 1 - i))) > 0)
+        cp.BlockArray.back() ^= (1ull << (bitSize - 1 - i));
+    }
+  }
+  void delTop() {
+    uint32_t topbit = (bitSize - (len % bitSize)) % bitSize;
+    for (uint32_t i = 0; i < topbit; i++) {
+      if ((BlockArray.back() & (1ull << (bitSize - 1 - i))) > 0)
+        BlockArray.back() ^= (1ull << (bitSize - 1 - i));
+    }
+  }
 
  public:
   BigInt(uint32_t len_, bool all1 = false)
       : len(len_), BlockSize((len_ + bitSize - 1) / bitSize) {
     if (all1) {
       BlockArray.assign(BlockSize, max);
+      delTop();
     } else {
       BlockArray.assign(BlockSize, 0);
     }
@@ -38,10 +53,6 @@ class BigInt {
     for (uint32_t i = 0; i < BlockSize; i++) {
       (cp.BlockArray[i]) = ~(cp.BlockArray[i]);
     }
-    uint32_t topbit = (bitSize - (len % bitSize)) % bitSize;
-    for (uint32_t i = 0; i < topbit; i++) {
-      cp.BlockArray.back() ^= (1ull << (bitSize - 1 - i));
-    }
     return cp;
   }
   BigInt& operator+=(const BigInt& val) {
@@ -50,7 +61,11 @@ class BigInt {
       T res = (carryFlag ? 1 : 0);
       carryFlag = false;
       carryFlag = (max - val.BlockArray[i] < (this->BlockArray[i]));
-      (this->BlockArray[i]) += val.BlockArray[i] + res;
+      (this->BlockArray[i]) += val.BlockArray[i];
+      if (this->BlockArray[i] == max && res == 1) {
+        carryFlag = 1;
+      }
+      (this->BlockArray[i]) += res;
     }
     return *(this);
   }
@@ -87,7 +102,7 @@ class BigInt {
     for (uint32_t i = 0; i < BlockSize; i++) {
       T cp = (BlockArray[i] << 1);
       if (MSB) {
-        cp &= (1ull);
+        cp |= (1ull);
       }
       if (BlockArray[i] & (1ull << (bitSize - 1))) {
         MSB = true;
@@ -96,51 +111,56 @@ class BigInt {
       }
       BlockArray[i] = cp;
     }
+    // delTop();
   }
 };
-int main() {
-  // len1=m
-  std::string read1, read2;
-  std::cin >> read1 >> read2;
-  uint32_t len1 = read1.size(), len2 = read2.size();
+int edit_distance_edit_distance_myers_bit(const std::string& read1,
+                                          const std::string& read2) {
+  const uint32_t len2 = read2.size();
   std::vector<BigInt<uint64_t>> EqFlag(1024);
-  std::vector<std::vector<uint32_t>> read1CharIndexList(1024);
-  for (uint32_t idx = 0; idx < len1; idx++) {
-    read1CharIndexList[read1[idx]].emplace_back(idx);
-  }
+  const BigInt<uint64_t> allZeroList(len2);
   {  // 一致している場所のフラグを作成
-     // TODO:この辺バグっている
-    const BigInt<uint64_t> allZeroList(len2);
-    for (char c2 : read2) {
-      EqFlag[c2] = allZeroList;
-      for (uint32_t read1CharIndex : read1CharIndexList[c2]) {
-        EqFlag[c2].setIthBit(read1CharIndex);
+    std::vector<std::vector<uint32_t>> read2CharIndexList(1024);
+    for (uint32_t idx = 0; idx < len2; idx++) {
+      read2CharIndexList[read2[idx]].emplace_back(idx);
+    }
+    std::vector<bool> calced(1024, false);
+    for (char c1 : read1) {
+      if (calced[c1]) continue;
+      calced[c1] = true;
+      EqFlag[c1] = allZeroList;
+      for (uint32_t read2CharIndex : read2CharIndexList[c1]) {
+        EqFlag[c1].setIthBit(read2CharIndex);
       }
     }
   }
-  uint32_t C = len2;
+  uint32_t Score = len2;
   BigInt<uint64_t> D0(len2), Pv(len2, true), Ph(len2), Nv(len2), Nh(len2);
   auto shift = [&](BigInt<uint64_t>& v) -> BigInt<uint64_t> {
     BigInt<uint64_t> ret = v;
     ret.shift();
     return ret;
   };
-  for (char c2 : read2) {
-    BigInt<uint64_t> Eq = EqFlag[c2];
-    D0 = (((Eq & Pv) + Pv) ^ Pv) | Eq | Nv;
-    Ph = Nv | (~(D0 | Pv));
-    Nh = D0 & Pv;
+  for (char c1 : read1) {
+    BigInt<uint64_t> Eq = EqFlag[c1];
+    D0 = (((((Eq & Pv) + Pv) ^ Pv) | Eq) | Nv);
+    Ph = (Nv | (~(D0 | Pv)));
+    Nh = (D0 & Pv);
     if (Ph.getIthBit(len2 - 1)) {
-      C++;
+      Score++;
     } else if (Nh.getIthBit(len2 - 1)) {
-      C--;
+      Score--;
     }
     BigInt<uint64_t> cp = shift(Ph);
     cp.setIthBit(0);
     Pv = (shift(Nh) | (~(D0 | cp)));
-    cp = shift(Ph);
-    cp.setIthBit(0);
-    Nv = D0 & cp;
+    Nv = (D0 & cp);
   }
-  std::cout << C << std::endl;
+  return Score;
+}
+int main() {
+  std::string read1, read2;
+  std::cin >> read1 >> read2;
+  if (read1.size() > read2.size()) std::swap(read1, read2);
+  std::cout << edit_distance_edit_distance_myers_bit(read1, read2) << std::endl;
 }
