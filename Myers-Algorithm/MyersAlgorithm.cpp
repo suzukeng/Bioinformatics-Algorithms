@@ -6,7 +6,7 @@
 const uint32_t bitSize = 64;  // 符号なし64bit整数でまとめて演算することを想定
 template <class T>
 class BigInt {
- public:
+ private:
   uint32_t len;
   uint32_t BlockSize;
   std::vector<T> BlockArray;
